@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8"> 
+  </head>
+  <body>
+    <div id="renkon">
+      <link rel="stylesheet" href="../bridge/session.css" />
+      <script type="reactive">
+        const localMediaModule = import("../bridge/localmedia.js");
+        const {html, render} = import('../preact.standalone.module.js');
+        const setSessionButton = Events.listener(document.querySelector("#setSessionButton"), "click", (evt) => evt);
+        const audioContext = Behaviors.keep(Events.listener(document.querySelector("#logo"), "click", (evt) => new window.AudioContext()));
+
+        console.log("audioContext", audioContext);
+        const sessionSpec = (() => document.querySelector("#sessionName").textContent)(setSessionButton);
+          console.log(sessionSpec);
+
+        const localMedia = new localMediaModule.LocalMedia({
+          videoSource: false,
+          onstreamchange: (stream) => {
+          }
+        });
+
+        const streams = localMedia.setup();
+
+        const source = ((audioContext, localMedia, _streams) => {
+          console.log("in source", audioContext, localMedia);
+          return new window.MediaStreamAudioSourceNode(audioContext, {mediaStream: localMedia.stream})
+        })(audioContext, localMedia, streams);
+        console.log("source", source);
+
+        const bufferLength = analyser.frequencyBinCount;
+
+        const dataArray = new Uint8Array(bufferLength);
+
+        const analyser = (() => {
+          const a = audioContext.createAnalyser();
+          a.fftSize = 2048;
+          source.connect(a);
+          return a;
+        })();
+
+        // Get a canvas defined with ID "oscilloscope"
+        const canvas = document.getElementById("oscilloscope");
+        const canvasCtx = canvas.getContext("2d");
+
+        function draw(analyser, canvasCtx, time) {
+          analyser.getByteTimeDomainData(dataArray);
+        
+          canvasCtx.fillStyle = "rgb(200 200 200)";
+          canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+        
+          canvasCtx.lineWidth = 2;
+          canvasCtx.strokeStyle = "rgb(0 0 0)";
+        
+          canvasCtx.beginPath();
+        
+          const sliceWidth = (canvas.width * 1.0) / bufferLength;
+          let x = 0;
+        
+          for (let i = 0; i < bufferLength; i++) {
+            const v = dataArray[i] / 128.0;
+            const y = (v * canvas.height) / 2;
+        
+            if (i === 0) {
+              canvasCtx.moveTo(x, y);
+            } else {
+              canvasCtx.lineTo(x, y);
+            }
+        
+            x += sliceWidth;
+          }
+        
+          canvasCtx.lineTo(canvas.width, canvas.height / 2);
+          canvasCtx.stroke();
+        }
+
+        draw(analyser, canvasCtx, Events.timer(16));
+
+      </script>
+      <canvas id="oscilloscope" width=320 height=320></canvas>
+      <div class="flex flex-wrap align-center px-6 py-4">
+        <h1 id="logo" class="py-1 text-xl font-bold grow">bridge</h1>
+      </div>
+      <div id="sessionNameHolder">
+        <div contentEditable id="sessionName">https://substrate.home.arpa/bridge;sessions=sp-01J343NFDMW9B5XG6S6XJZDNE8;id=cqcqi10ri6qs739svkk1</div>
+        <button id="setSessionButton">Set</button>
+      </div>
+      <div id="sessions"></div>
+    </div>
+
+    </div>
+    <script type="module">
+      import("./renkon.js").then((mod) => mod.view());
+    </script>
+  </body>
+</html>
