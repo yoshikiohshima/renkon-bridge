@@ -8,6 +8,14 @@
       <link rel="stylesheet" href="../bridge/session.css" />
       <script type="reactive">
         const localMediaModule = import("../bridge/localmedia.js");
+        const {audioBufferToWav} = import("../bridge/wav.js");
+
+        const {ReflectCommands} = import("https://substrate.home.arpa/tool-call/js/commands.js");
+        const r = new ReflectCommands("https://substrate.home.arpa").reflect();
+        console.log(r);
+
+        // const result = r["faster-whisper:transcribe-data"].run({audio_data: "base64encodedfile", audio_metadata: {mime_type: "audio/wav"}, task: 'transcribe'})
+
         const {html, render} = import('../preact.standalone.module.js');
         const setSessionButton = Events.listener(document.querySelector("#setSessionButton"), "click", (evt) => evt);
         const audioContext = Behaviors.keep(Events.listener(document.querySelector("#logo"), "click", (evt) => new window.AudioContext()));
@@ -36,17 +44,50 @@
 
         console.log(processor);
 
-        const inputs = Events.observe((notifier) => {
+        const input = Events.observe((notifier) => {
             processor.port.onmessage = (event) => {
-                notifier(event.data.inputs);
+                notifier(event.data.input);
             }
             source.connect(processor);
             return () => source.disconnect(processor);
         });
 
-        console.log("inputs", inputs);
-        
+        const longerBuffer = Behaviors.collect([], Events.or(input, consumer), (old, now) => {
+            if (now.consumed) {
+                return [];
+            }
+
+            console.log("longerBuffer.length", [...old, now].length);
+            return [...old, now];     
+        });
+
+        const consumer = Events.collect(undefined, $longerBuffer, (old, now) => {
+            const zip = (pairs) => {
+                const a = [];
+                const b = [];
+                for (const pair of pairs) {
+                    a.push(pair[0]);
+                    b.push(pair[1]);
+                }
+                return [a, b];
+            }
+            if (now.length >= 64) {
+                return {data: zip(now), consumed: true};
+            }
+            return undefined;
+        });
+
+        const wav = ((consumer) => {
+            if (consumer && consumer.consumed) {
+                return audioBufferToWav(16000, consumer.data);
+            }
+            return;
+        })(consumer);
+        console.log("wav", wav);
     
+        const result = r["faster-whisper:transcribe-data"].run({audio_data: btoa(wav), audio_metadata: {mime_type: "audio/wav"}, task: 'transcribe'})
+
+
       </script>
       <canvas id="oscilloscope" width=320 height=320></canvas>
       <div class="flex flex-wrap align-center px-6 py-4">

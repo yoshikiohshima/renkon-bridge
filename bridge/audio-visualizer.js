@@ -1,18 +1,13 @@
 class VisualizerProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
-        this.volume = 0;
-        this.updateIntervalInMS = 100;
         this.lastUpdateTime = Date.now();
+        const buffers = [];
     }
 
     process(inputs, _outputs, _parameters) {
-        // let now = Date.now();
-        // if (now < this.lastUpdateTime + this.updateIntervalInMS) {return true;}
-        // this.lastUpdateTime = now;
-        //const input = inputs[0];
-
-        this.port.postMessage({inputs});
+        const input = inputs[0];
+        this.port.postMessage({input});
         return true;
     }
 }
