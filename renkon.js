@@ -28674,10 +28674,12 @@ class OrEvent extends Stream {
   }
 }
 class UserEvent extends Stream {
-  constructor(record) {
+  constructor(record, queued) {
     super(eventType, false);
     __publicField(this, "record");
+    __publicField(this, "queued");
     this.record = record;
+    this.queued = !!queued;
   }
   created(state, id) {
     let oldRecord = state.scratch.get(id);
@@ -28689,7 +28691,12 @@ class UserEvent extends Stream {
     return this;
   }
   evaluate(state, node, _inputArray, _lastInputArray) {
-    const newValue = state.getEventValue(state.scratch.get(node.id), state.time);
+    let newValue;
+    if (this.queued) {
+      newValue = state.getEventValues(state.scratch.get(node.id), state.time);
+    } else {
+      newValue = state.getEventValue(state.scratch.get(node.id), state.time);
+    }
     if (newValue !== void 0) {
       if (newValue !== null && newValue.then) {
         newValue.then((value) => {
@@ -29682,7 +29689,7 @@ function isGenerator(value) {
 }
 const defaultHandler = (ev) => ev;
 function eventBody(options) {
-  let { forObserve, callback, dom, eventName, eventHandler, state } = options;
+  let { forObserve, callback, dom, eventName, eventHandler, state, queued } = options;
   let record = { queue: [] };
   let myHandler;
   let realDom;
@@ -29727,7 +29734,7 @@ function eventBody(options) {
       }
     };
   }
-  return new UserEvent(record);
+  return new UserEvent(record, queued);
 }
 class Events {
   constructor(state) {
@@ -29737,8 +29744,8 @@ class Events {
   static create(state) {
     return new Events(state);
   }
-  listener(dom, eventName, handler) {
-    return eventBody({ type: eventType, forObserve: false, dom, eventName, eventHandler: handler, state: this.programState });
+  listener(dom, eventName, handler, options) {
+    return eventBody({ type: eventType, forObserve: false, dom, eventName, eventHandler: handler, state: this.programState, queued: !!(options == null ? void 0 : options.queued) });
   }
   delay(varName, delay) {
     return new DelayedEvent(delay, varName, false);
@@ -29768,8 +29775,8 @@ class Events {
   receiver() {
     return new ReceiverEvent(void 0);
   }
-  observe(callback) {
-    return eventBody({ type: eventType, forObserve: true, callback, state: this.programState });
+  observe(callback, options) {
+    return eventBody({ type: eventType, forObserve: true, callback, state: this.programState, queued: options == null ? void 0 : options.queued });
   }
   message(event, data2, directWindow) {
     const isInIframe = window.top !== window;
@@ -30138,6 +30145,14 @@ class ProgramState {
   getEventValue(record, _t) {
     if (record.queue.length >= 1) {
       const value = record.queue[record.queue.length - 1].value;
+      record.queue = [];
+      return value;
+    }
+    return void 0;
+  }
+  getEventValues(record, _t) {
+    if (record.queue.length >= 1) {
+      const value = record.queue.map((pair) => pair.value);
       record.queue = [];
       return value;
     }
