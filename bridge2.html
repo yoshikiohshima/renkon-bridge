@@ -5,18 +5,14 @@
   </head>
   <body>
     <div id="renkon">
-      <link rel="stylesheet" href="../bridge/session.css" />
+      <link rel="stylesheet" href="../bridge/session.css">
       <script type="reactive">
         const localMediaModule = import("../bridge/localmedia.js");
         const {audioBufferToWav} = import("../bridge/wav.js");
         const {toBase64} = import("../bridge/toBase64.js");
 
         const {html, render} = import('../preact.standalone.module.js');
-        const setSessionButton = Events.listener(document.querySelector("#setSessionButton"), "click", (evt) => evt);
         const audioContext = Behaviors.keep(Events.listener(document.querySelector("#logo"), "click", (evt) => new window.AudioContext()));
-
-        console.log("audioContext", audioContext);
-        const sessionSpec = (() => document.querySelector("#sessionName").textContent)(setSessionButton);
 
         const localMedia = new localMediaModule.LocalMedia({
           videoSource: false,
@@ -54,7 +50,7 @@
         // {label: number, data: Array<[Array<number>, Array<number>]>}
         const longerBuffer = Behaviors.collect({label: 1, data: []}, inputs, (old, inputs) => {
             const newData = inputs.map(obj => obj.input);
-            if (old.data.length < 640) {
+            if (old.data.length < 1280) {
                 old.data.push(...newData); // could be a bad idea
                 return old;
             } else {
@@ -82,36 +78,54 @@
         console.log("wav", wav);
     
         const response = ((wav) => {
-            if (wav.label === 2) {
-                return fetch("https://substrate.home.arpa/faster-whisper/v1/transcribe", {
-                    method: "POST",
-                    mode: "cors",
-                    headers: {
-                        "Content-Type": "application/json",                      
-                    },
-                    body: JSON.stringify({audio_data: toBase64(new Uint8Array(wav.wav)), audio_metadata: {mime_type: "audio/wav"}, task: "transcribe"})
-                });
+                return {
+                    label: wav.label,
+                    response: fetch("https://substrate.home.arpa/faster-whisper/v1/transcribe", {
+                        method: "POST",
+                        mode: "cors",
+                        headers: {
+                            "Content-Type": "application/json",                      
+                        },
+                        body: JSON.stringify({audio_data: toBase64(new Uint8Array(wav.wav)), audio_metadata: {mime_type: "audio/wav"}, task: "transcribe"})
+                    })
+                }
                 // const {ReflectCommands} = import("https://substrate.home.arpa/tool-call/js/commands.js");
                 // const r = new ReflectCommands("https://substrate.home.arpa").reflect();
                 // return r["faster-whisper:transcribe-data"].run({audio_data: toBase64(new Uint8Array(wav.wav)), audio_metadata: {mime_type: "audio/wav"}, task: 'transcribe'})
-            }
         })(wav);
 
-        const responseJson = response.json();
-        console.log(responseJson);
-
+        const waited = Events.resolvePart(response.response, response);
+        const responseJson = ((waited) => {
+            return {label: waited.label, json: waited.response.json()};
+        })(waited);
+        const fullResponse = Events.resolvePart(responseJson.json, responseJson);
+        const transcriptions = Behaviors.collect([], fullResponse, (old, now) => {
+            function find(array, label) {
+                for (let i = 0; i < array.length - 1; i++) {
+                    if (array[i].labe === label - 1) {
+                        return i;
+                    }
+                }
+                return array.length;
+            }
+            const index = find(old, now.label);
+            old[index] = now;
+            return [...old];
+        });
+        const results = transcriptions.map((transcript) => {
+            return html`<div id="transcript-${transcript.label}">${transcript.json.segments.map((seg) => seg.text)}</div>`;
+        })
+        render(results, document.querySelector("#entries"));
       </script>
-      <canvas id="oscilloscope" width=320 height=320></canvas>
-      <div class="flex flex-wrap align-center px-6 py-4">
-        <h1 id="logo" class="py-1 text-xl font-bold grow">bridge</h1>
+      <div class="flex flex-col grow">
+        <button id="logo" class="py-1 text-xl font-bold grow">Start</button>
+        <div id="mic-controls" class="flex space-x-2">
+          <div id="mic-container"></div>
+          <button name="mic-mute" id="mic-mute" class="p-2 border border-gray-600 rounded-md text-md focus:border-blue-500 focus:ring-blue-500 bg-gray-700 text-gray-400">Mute</button>
+          <button id="system-audio" class="p-2 border border-gray-600 rounded-md text-md focus:border-blue-500 focus:ring-blue-500 bg-gray-700 text-gray-400">Send System Audio</button>
+        </div>
       </div>
-      <div id="sessionNameHolder">
-        <div contentEditable id="sessionName">https://substrate.home.arpa/bridge;sessions=sp-01J343NFDMW9B5XG6S6XJZDNE8;id=cqcqi10ri6qs739svkk1</div>
-        <button id="setSessionButton">Set</button>
-      </div>
-      <div id="sessions"></div>
-    </div>
-
+      <div id="entries" style="height:100%; overflow: scroll"></div>
     </div>
     <script type="module">
       import("./renkon.js").then((mod) => mod.view());
