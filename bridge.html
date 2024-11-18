@@ -78,6 +78,15 @@
             return {label: voiceChunk.label, wav: audioBufferToWav(44100, zip(voiceChunk.data))};
         })(voiceChunk);
         console.log("wav", wav);
+
+        const saveWav = ((wav) => {
+          let div = document.createElement("a");
+          const blob = new Blob([wav.wav], {type: "audio/wav"});
+          let fileURL = URL.createObjectURL(blob);
+          div.setAttribute("href", fileURL);
+          div.setAttribute("download", `wav-${Date.now()}.wav`);
+          div.click();
+        })(wav);
 /*    
         const response = ((wav) => {
             return fetch("https://substrate.home.arpa/faster-whisper/v1/transcribe", {
@@ -92,7 +101,7 @@
             }).then((json) => {
                 return {
                     label: wav.label,
-                    json
+                    json,
                 }
             });
                 // const {ReflectCommands} = import("https://substrate.home.arpa/tool-call/js/commands.js");
@@ -102,7 +111,8 @@
 */
 
         const response = (async (wav) => {
-            const response = await fetch("https://substrate.home.arpa/faster-whisper/v1/transcribe", {
+          const requestTime = Date.now();
+          const response = await fetch("https://substrate.home.arpa/faster-whisper/v1/transcribe", {
                 method: "POST",
                 mode: "cors",
                 headers: {
@@ -110,18 +120,21 @@
                 },
                 body: JSON.stringify({audio_data: toBase64(new Uint8Array(wav.wav)), audio_metadata: {mime_type: "audio/wav"}, task: "transcribe"})
             });
-            
+
             const json = await response.json();
-            return {
-                label: wav.label,
-                json
-            }
+            const value = {
+              label: wav.label,
+              json,
+              requestTime,
+            };
+
+            return value;
                 // const {ReflectCommands} = import("https://substrate.home.arpa/tool-call/js/commands.js");
                 // const r = new ReflectCommands("https://substrate.home.arpa").reflect();
                 // return r["faster-whisper:transcribe-data"].run({audio_data: toBase64(new Uint8Array(wav.wav)), audio_metadata: {mime_type: "audio/wav"}, task: 'transcribe'})
         })(wav);
 
-        const fullResponse = response;
+        const fullResponse = ((response) => {console.log(Date.now() - response.requestTime); return response})(response);
         const transcriptions = Behaviors.collect([], fullResponse, (old, now) => {
             function find(array, label) {
                 for (let i = 0; i < array.length - 1; i++) {

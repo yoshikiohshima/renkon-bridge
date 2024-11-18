@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8"> 
+  </head>
+  <body>
+    <div id="renkon">
+      <link rel="stylesheet" href="./bridge/session.css">
+      <script type="reactive">
+
+        const {toBase64} = import("../bridge/toBase64.js");
+
+        const {html, render} = import('../preact.standalone.module.js');
+
+        const wav = fetch("./wav.wav").then((data) => {
+          return data.arrayBuffer()
+        }).then((buffer) => ({label: 0, wav: new Uint8Array(buffer)}));
+
+        console.log("wav", wav);
+
+        const timer = Events.timer(3000);
+
+        const boundedTimer = ((timer) => timer <= 40000 ? timer : undefined)(timer);
+
+        const response = (async (wav) => {
+          const requestTime = Date.now();
+          const response = await fetch("https://substrate.home.arpa/faster-whisper/v1/transcribe", {
+                method: "POST",
+                mode: "cors",
+                headers: {
+                    "Content-Type": "application/json",                      
+                },
+                body: JSON.stringify({audio_data: toBase64(new Uint8Array(wav.wav)), audio_metadata: {mime_type: "audio/wav"}, task: "transcribe"})
+            });
+
+            const json = await response.json();
+            const value = {
+              label: wav.label,
+              json,
+              requestTime,
+            };
+
+            return value;
+        })(wav, boundedTimer);
+
+        const fullResponse = ((response) => {console.log(Date.now() - response.requestTime); return response})(response);
+        const transcriptions = Behaviors.collect([], fullResponse, (old, now) => {
+            function find(array, label) {
+                for (let i = 0; i < array.length - 1; i++) {
+                    if (array[i].labe === label - 1) {
+                        return i;
+                    }
+                }
+                return array.length;
+            }
+            const index = find(old, now.label);
+            old[index] = now;
+            return [...old];
+        });
+        const results = transcriptions.map((transcript) => {
+            return html`<div id="transcript-${transcript.label}">${transcript.json.segments.map((seg) => seg.text)}</div>`;
+        })
+        render(results, document.querySelector("#entries"));
+      </script>
+      <div class="flex flex-col grow">
+        <button id="logo" class="py-1 text-xl font-bold grow">Start</button>
+        <div id="mic-controls" class="flex space-x-2">
+          <div id="mic-container"></div>
+          <button name="mic-mute" id="mic-mute" class="p-2 border border-gray-600 rounded-md text-md focus:border-blue-500 focus:ring-blue-500 bg-gray-700 text-gray-400">Mute</button>
+          <button id="system-audio" class="p-2 border border-gray-600 rounded-md text-md focus:border-blue-500 focus:ring-blue-500 bg-gray-700 text-gray-400">Send System Audio</button>
+        </div>
+      </div>
+      <div id="entries" style="height:100%; overflow: scroll"></div>
+    </div>
+    <script type="module">
+      import("./renkon.js").then((mod) => mod.view());
+    </script>
+  </body>
+</html>
