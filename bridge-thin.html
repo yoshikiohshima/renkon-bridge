@@ -14,11 +14,11 @@
         const {html, render} = import('../preact.standalone.module.js');
         const audioContext = Behaviors.keep(Events.listener(document.querySelector("#logo"), "click", (evt) => new window.AudioContext()));
 
-        const localMedia = new localMediaModule.LocalMedia({
+        const localMedia = (() => new localMediaModule.LocalMedia({
           videoSource: false,
           onstreamchange: (stream) => {
           }
-        });
+        }))(audioContext);
 
         const streams = localMedia.setup();
 
@@ -33,7 +33,7 @@
                 worklet.addEventListener("processorerror", console.log);
                 return worklet;
             })
-        })(audioContext);
+        })(audioContext, source);
 
         console.log(processor);
 
@@ -79,81 +79,34 @@
         })(voiceChunk);
         console.log("wav", wav);
 
-        /*
-        const saveWav = ((wav) => {
-          let div = document.createElement("a");
-          const blob = new Blob([wav.wav], {type: "audio/wav"});
-          let fileURL = URL.createObjectURL(blob);
-          div.setAttribute("href", fileURL);
-          div.setAttribute("download", `wav-${Date.now()}.wav`);
-          div.click();
-        })(wav);
-        */
-/*    
-        const response = ((wav) => {
-            return fetch("https://substrate.home.arpa/faster-whisper/v1/transcribe", {
+        const emit = fetch("http://localhost:8888/audio", {
                 method: "POST",
                 mode: "cors",
                 headers: {
                     "Content-Type": "application/json",                      
                 },
                 body: JSON.stringify({audio_data: toBase64(new Uint8Array(wav.wav)), audio_metadata: {mime_type: "audio/wav"}, task: "transcribe"})
-            }).then((response) => {
-                return response.json()
-            }).then((json) => {
-                return {
-                    label: wav.label,
-                    json,
-                }
-            });
-                // const {ReflectCommands} = import("https://substrate.home.arpa/tool-call/js/commands.js");
-                // const r = new ReflectCommands("https://substrate.home.arpa").reflect();
-                // return r["faster-whisper:transcribe-data"].run({audio_data: toBase64(new Uint8Array(wav.wav)), audio_metadata: {mime_type: "audio/wav"}, task: 'transcribe'})
-        })(wav);
-*/
+        });
 
-        const response = (async (wav) => {
-          const requestTime = Date.now();
-          const response = await fetch("https://substrate.home.arpa/faster-whisper/v1/transcribe", {
-                method: "POST",
-                mode: "cors",
-                headers: {
-                    "Content-Type": "application/json",                      
-                },
-                body: JSON.stringify({audio_data: toBase64(new Uint8Array(wav.wav)), audio_metadata: {mime_type: "audio/wav"}, task: "transcribe"})
-            });
+        const socket = (() => new WebSocket("http://localhost:8889"))(audioContext);
 
-            const json = await response.json();
-            const value = {
-              label: wav.label,
-              json,
-              requestTime,
-            };
+        const socketData = Events.observe((notify) => {
+          socket.onmessage = (e) => {
+            notify(JSON.parse(e.data))
+          }
+          return () => socket.close();
+        });
 
-            return value;
-                // const {ReflectCommands} = import("https://substrate.home.arpa/tool-call/js/commands.js");
-                // const r = new ReflectCommands("https://substrate.home.arpa").reflect();
-                // return r["faster-whisper:transcribe-data"].run({audio_data: toBase64(new Uint8Array(wav.wav)), audio_metadata: {mime_type: "audio/wav"}, task: 'transcribe'})
-        })(wav);
+        console.log("socketData", socketData);
 
-        const fullResponse = ((response) => {console.log(Date.now() - response.requestTime); return response})(response);
-        const transcriptions = Behaviors.collect([], fullResponse, (old, now) => {
-            function find(array, label) {
-                for (let i = 0; i < array.length - 1; i++) {
-                    if (array[i].labe === label - 1) {
-                        return i;
-                    }
-                }
-                return array.length;
-            }
-            const index = find(old, now.label);
-            old[index] = now;
-            return [...old];
+        const transcriptions = Behaviors.collect([], socketData, (old, now) => {
+            return [...old, socketData];
         });
         const results = transcriptions.map((transcript) => {
-            return html`<div id="transcript-${transcript.label}">${transcript.json.segments.map((seg) => seg.text)}</div>`;
+            return html`<div id="transcript-${transcript.label}">${transcript.segments.map((seg) => seg.text)}</div>`;
         })
         render(results, document.querySelector("#entries"));
+
       </script>
       <div class="flex flex-col grow">
         <button id="logo" class="py-1 text-xl font-bold grow">Start</button>
