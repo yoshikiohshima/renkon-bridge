@@ -14,8 +14,8 @@
 "id":"53",
 "type":"move",
 "width":688.8380302414324,
-"x":-1453.1273228885086,
-"y":-5.030001839924694}]]}},
+"x":-1379.6658266933164,
+"y":-88.4020723640512}]]}},
 "titles":{"map":{"__map":true,
 "values":[["1",{"id":"1",
 "state":false,
@@ -29,16 +29,14 @@
 "values":[["1","code"],["18","code"],["53","code"]]}},
 "windows":["1","18","53"],
 "zIndex":{"map":{"__map":true,
-"values":[["1",104],["18",105],["53",103]]}}}
-{__codeMap: true, value: [[`1`, `/* const hostName = (() => {
-    const maybeHost = new URL(window.location).searchParams.get("host");
+"values":[["1",104],["18",103],["53",105]]}}}
+{__codeMap: true, value: [[`1`, `const hostName = (() => {
+    const maybeHost = new URL(window.top.location).searchParams.get("host");
     if (maybeHost) {
         return maybeHost;
     }
     return "/";
 })();
-*/
-const hostName = "https://substrate-3533.local";
 
 const {toBase64} = import("./media/toBase64.js");
 const {LocalMedia} = import("./media/localmedia.js");
