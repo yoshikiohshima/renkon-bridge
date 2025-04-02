@@ -1,35 +1,35 @@
 {"padTitle":"Bridge",
 "positions":{"map":{"__map":true,
-"values":[["1",{"height":1091.577947465876,
+"values":[["1",{"height":1821.1267774012235,
 "id":"1",
-"type":"move",
-"width":945.046875,
-"x":48.18051141173196,
-"y":33.54045409569818}],["5",{"height":412.85546875,
-"id":"5",
-"type":"move",
-"width":606.78125,
-"x":2079.4768471127227,
-"y":8.571546078226902}],["18",{"height":1074.9705228616706,
+"type":"resize",
+"width":1207.5467308406487,
+"x":-560.1166586818549,
+"y":-83.89870638139377}],["18",{"height":1407.714075025237,
 "id":"18",
 "type":"move",
-"width":926.4816729982678,
-"x":1113.8394891689018,
-"y":4.568383524296621}]]}},
+"width":942.8311006792607,
+"x":866.4612238771008,
+"y":-89.95857167233122}],["53",{"height":562.8427973530282,
+"id":"53",
+"type":"move",
+"width":688.8380302414324,
+"x":-1453.1273228885086,
+"y":-5.030001839924694}]]}},
 "titles":{"map":{"__map":true,
 "values":[["1",{"id":"1",
 "state":false,
-"title":"untitled"}],["5",{"id":"5",
+"title":"Service Access"}],["18",{"id":"18",
 "state":false,
-"title":"CSS"}],["18",{"id":"18",
+"title":"App"}],["53",{"id":"53",
 "state":false,
-"title":"untitled"}]]}},
+"title":"WAV"}]]}},
 "version":2,
 "windowTypes":{"map":{"__map":true,
-"values":[["1","code"],["5","code"],["18","code"]]}},
-"windows":["1","5","18"],
+"values":[["1","code"],["18","code"],["53","code"]]}},
+"windows":["1","18","53"],
 "zIndex":{"map":{"__map":true,
-"values":[["1",103],["5",105],["18",104]]}}}
+"values":[["1",104],["18",105],["53",103]]}}}
 {__codeMap: true, value: [[`1`, `/* const hostName = (() => {
     const maybeHost = new URL(window.location).searchParams.get("host");
     if (maybeHost) {
@@ -42,10 +42,11 @@ const hostName = "https://substrate-3533.local";
 
 const {toBase64} = import("./media/toBase64.js");
 const {LocalMedia} = import("./media/localmedia.js");
-const {audioBufferToWav} = import("./media/wav.js");
 
-const {h, render, html} = import("./preact.standalone.module.js");
-const {ReflectCommands} = import(\`\${hostName}/tool-call/js/commands.js\`);
+const {reflect, sender} = import(\`./msg.js\`);
+
+const msgindex = reflect(\`\${hostName}/substrate/v1/msgindex\`);
+const msgSender = sender();
 
 const audioContext = Behaviors.collect(undefined, trigger, (old, _now) => {
     if (old === undefined) {
@@ -65,7 +66,7 @@ const localMedia = new LocalMedia({
 const streams = localMedia.setup();
 
 const source = ((audioContext, localMedia, _streams) => {
-    console.log("in source", audioContext, localMedia);
+    // console.log("in source", audioContext, localMedia);
     return new window.MediaStreamAudioSourceNode(audioContext, {mediaStream: localMedia.stream})
 })(audioContext, localMedia, streams);
 
@@ -113,85 +114,57 @@ const _speaking = Behaviors.collect({time: 0, data: [], speaking: false}, inputs
     return {time: currentTime, data: newInput, speaking: true};
 }));
 
-const root = new ReflectCommands(hostName + "/substrate/v1/msgindex").reflect();
-const whisper = root["faster-whisper/transcribe-data"];
+const sendmsg = (msg, data) => {
+  return msgSender(msg, data).then((obj) => obj.data.returns);
+}
 
-const wav = ((voiceChunk) => {
-    const zip = (pairs) => {
-        const length = pairs[0][0].length * pairs.length;
-        const a = new Float32Array(length);
-        const b = new Float32Array(length);
-        let index = 0;
-        for (let i = 0; i < pairs.length; i++) {
-            a.set(pairs[i][0], index);
-            b.set(pairs[i][1], index);
-            index += pairs[i][0].length;
-        }
-        return [a, b];
-    }
-    return {timelabel: voiceChunk.time, wav: audioBufferToWav(44100, zip(voiceChunk.data))};
-})(voiceChunk);
-
-
-console.log("wav", wav);
-
-/*
-  const saveWav = ((wav) => {
-  let div = document.createElement("a");
-  const blob = new Blob([wav.wav], {type: "audio/wav"});
-  let fileURL = URL.createObjectURL(blob);
-  div.setAttribute("href", fileURL);
-  div.setAttribute("download", \`wav-\${Date.now()}.wav\`);
-  div.click();
-  })(wav);
-*/
-
-const transcribed = ((wav, whisper) => {
+const transcribed = ((wav) => {
     const audio_data = toBase64(new Uint8Array(wav.wav));
     const audio_metadata = {mime_type: "audio/wav"};
     const task = "transcribe";
-    console.log("running", audio_data.length);
-    return {segments: [{words: ["audio_data.length"]}]} // whisper.run({audio_data, audio_metadata, task});
-})(wav, whisper);
+    const parameters = {audio_data, audio_metadata, task};
+    const msg = msgindex['faster-whisper/transcribe-data'];
+    return sendmsg(msg, {parameters}) // whisper.run({audio_data, audio_metadata, task});
+})(wav);
 
-console.log("transcribed", transcribed);
 
-const words = ((transcribed) => {
-    const result = [];
-    transcribed.segments.forEach((seg) => {
-        seg.words.forEach((word) => result.push(word));
-    });
-    return result;
-})(transcribed);
+const speakersFor = () => ["unknown"];
 
-const input = Events.change(words.join(" "));
-console.log("words", words);
-
-const model = Behaviors.collect([], words, ((old, now) => {
-  return [...old, {transcript: {fields: {segments: words}}, speakers: [], translations: [], assistants: []}];
-}));`],
-[`5`, `const css = \`
-html, body {
-height: 100%
-}
-\`;
-
-((css) => {
-    const style = document.createElement("style");
-    style.id = "pad-css";
-    style.textContent = css;
-    document.head.querySelector("#pad-css")?.remove();
-    document.head.appendChild(style);
-})(css);
+const model = Behaviors.collect([], transcribed, ((old, t) => {
+  if (transcribed.segments.length === 0) {console.log("silent"); return old;}
+  const now = {
+    transcript: {fields: t},
+    translations: [],
+    assistants: [],
+    tools: [],
+    speakers: speakersFor(),
+  };
+  return [...old, now];
+}));
 `],
-[`18`, `(() => {
+[`18`, `const {h, render, html} = import("./preact.standalone.module.js");
+
+(() => {
   const head = document.querySelector('head');
   const script = document.createElement('script');
   script.id = 'tailwindcss';
   script.src = 'https://cdn.tailwindcss.com';
   head.querySelector("#tailwindcss")?.remove();
   head.appendChild(script);
+
+  const css = \`
+html, body {
+height: 100%
+}
+\`;
+  const style = document.createElement("style");
+  style.id = "pad-css";
+  style.textContent = css;
+  document.head.querySelector("#pad-css")?.remove();
+  document.head.appendChild(style);
 })(sessionStart);
+
+const sessionStart = Behaviors.keep(Events.once(Date.now()));
 
 const Topbar = h('div', {"class":"flex flex-wrap px-6 py-4","id":"topbar"},
   sessionStart ? h("h1", {"class":"py-1 text-xl font-bold"},
@@ -202,18 +175,19 @@ const Topbar = h('div', {"class":"flex flex-wrap px-6 py-4","id":"topbar"},
 const Entry = (entry) => {
   if (!entry.transcript || !entry.transcript.fields || !entry.transcript.fields || !entry.transcript.fields.segments) return null;
   const data = entry.transcript.fields;
-  const words = data.segments;
-  console.log(words);
+  const track = [];
+  const words = data.segments
+    .flatMap((seg) => seg.words);
   return h('div', null,
     h("div", {"class": "text text-teal-500 space-x-4"}, entry.speakers.length == 0 ? "unknown" : entry.speakers.map(s => {
       return h("span", {"class": \`text-\${s.color}\`, "data-speaker-id": s.id}, s.name);
     })),
     h("div", {"class": \`text text-gray-400\`, lang: data.source_language},
       words.map(w => {
-        const colors = ["red", "blue"];
+        const colors = speakersFor(track, w.start*1000, w.end*1000).map(s => s.color);
         return h('span', {
           "class": colors.length == 0 ? "" : \`underline decoration-\${colors[0]}/50\`,
-        }, w)
+        }, w.word)
       })
     ),
     entry.translations.map(translation =>
@@ -232,8 +206,6 @@ const Entry = (entry) => {
 // TODO add keyed entries
 const Session = (model) => { return h('div', null, model.map(Entry)) };
 
-const sessionStart = Behaviors.keep(Events.once(Date.now()));
-
 const App = h('div', {"class": "flex flex-row bg-gray-900 text-white antialiased"},
   h('div', {'class': 'flex flex-col h-screen grow'},
     Topbar,
@@ -246,4 +218,34 @@ const App = h('div', {"class": "flex flex-row bg-gray-900 text-white antialiased
 render(
   App,
   document.querySelector('body'),
-)`]]}
+)`],
+[`53`, `const {audioBufferToWav} = import("./media/wav.js");
+
+const wav = ((voiceChunk) => {
+    const zip = (pairs) => {
+        const length = pairs[0][0].length * pairs.length;
+        const a = new Float32Array(length);
+        const b = new Float32Array(length);
+        let index = 0;
+        for (let i = 0; i < pairs.length; i++) {
+            a.set(pairs[i][0], index);
+            b.set(pairs[i][1], index);
+            index += pairs[i][0].length;
+        }
+        return [a, b];
+    }
+    return {timelabel: voiceChunk.time, wav: audioBufferToWav(44100, zip(voiceChunk.data))};
+})(voiceChunk);
+
+
+/*
+  const saveWav = ((wav) => {
+  let div = document.createElement("a");
+  const blob = new Blob([wav.wav], {type: "audio/wav"});
+  let fileURL = URL.createObjectURL(blob);
+  div.setAttribute("href", fileURL);
+  div.setAttribute("download", \`wav-\${Date.now()}.wav\`);
+  div.click();
+  })(wav);
+*/
+`]]}
