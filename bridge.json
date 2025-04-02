@@ -1,0 +1,249 @@
+{"padTitle":"Bridge",
+"positions":{"map":{"__map":true,
+"values":[["1",{"height":1091.577947465876,
+"id":"1",
+"type":"move",
+"width":945.046875,
+"x":48.18051141173196,
+"y":33.54045409569818}],["5",{"height":412.85546875,
+"id":"5",
+"type":"move",
+"width":606.78125,
+"x":2079.4768471127227,
+"y":8.571546078226902}],["18",{"height":1074.9705228616706,
+"id":"18",
+"type":"move",
+"width":926.4816729982678,
+"x":1113.8394891689018,
+"y":4.568383524296621}]]}},
+"titles":{"map":{"__map":true,
+"values":[["1",{"id":"1",
+"state":false,
+"title":"untitled"}],["5",{"id":"5",
+"state":false,
+"title":"CSS"}],["18",{"id":"18",
+"state":false,
+"title":"untitled"}]]}},
+"version":2,
+"windowTypes":{"map":{"__map":true,
+"values":[["1","code"],["5","code"],["18","code"]]}},
+"windows":["1","5","18"],
+"zIndex":{"map":{"__map":true,
+"values":[["1",103],["5",105],["18",104]]}}}
+{__codeMap: true, value: [[`1`, `/* const hostName = (() => {
+    const maybeHost = new URL(window.location).searchParams.get("host");
+    if (maybeHost) {
+        return maybeHost;
+    }
+    return "/";
+})();
+*/
+const hostName = "https://substrate-3533.local";
+
+const {toBase64} = import("./media/toBase64.js");
+const {LocalMedia} = import("./media/localmedia.js");
+const {audioBufferToWav} = import("./media/wav.js");
+
+const {h, render, html} = import("./preact.standalone.module.js");
+const {ReflectCommands} = import(\`\${hostName}/tool-call/js/commands.js\`);
+
+const audioContext = Behaviors.collect(undefined, trigger, (old, _now) => {
+    if (old === undefined) {
+        return new window.AudioContext();
+    }
+    return old;
+});
+
+const trigger = Events.listener(document.querySelector("body"), "click", (evt) => evt);
+
+const localMedia = new LocalMedia({
+    videoSource: false,
+    onstreamchange: (_stream) => {
+    }
+});
+
+const streams = localMedia.setup();
+
+const source = ((audioContext, localMedia, _streams) => {
+    console.log("in source", audioContext, localMedia);
+    return new window.MediaStreamAudioSourceNode(audioContext, {mediaStream: localMedia.stream})
+})(audioContext, localMedia, streams);
+
+const processor = ((audioContext) => {
+    return audioContext.audioWorklet.addModule(\`./media/audio-samples.js\`).then(() => {
+        const worklet = new window.AudioWorkletNode(audioContext, "processor");
+        worklet.addEventListener("processorerror", console.log);
+        return worklet;
+    })
+})(audioContext);
+
+const inputs = Events.observe((notifier) => {
+    processor.port.onmessage = (event) => {
+        notifier(event.data);
+    }
+    source.connect(processor);
+    return () => source.disconnect(processor);
+}, {queued: true});
+
+const voiceChunk = Events.receiver();
+
+console.log("voiceChunk", voiceChunk);
+
+const _speaking = Behaviors.collect({time: 0, data: [], speaking: false}, inputs, ((old, current) => {
+    const max = Math.max(...current.map((c) => c.max));
+    const currentTime = current[current.length - 1].currentTime;
+    const newInput = current.map((c) => c.input);
+
+    if (old.speaking) {
+        const newData = [...old.data, ...newInput];
+        if (max < 0.01) {
+            if (currentTime > old.time + 0.5) {
+                Events.send(voiceChunk, {time: currentTime, data: newData});
+                return {time: currentTime, data: newData, speaking: false};
+            }
+            return {time: old.time, data: newData, speaking: old.speaking};
+        }
+        return {time: currentTime, data: newData, speaking: old.speaking};
+    }
+
+    if (max < 0.01) {
+        return old;
+    }
+
+    return {time: currentTime, data: newInput, speaking: true};
+}));
+
+const root = new ReflectCommands(hostName + "/substrate/v1/msgindex").reflect();
+const whisper = root["faster-whisper/transcribe-data"];
+
+const wav = ((voiceChunk) => {
+    const zip = (pairs) => {
+        const length = pairs[0][0].length * pairs.length;
+        const a = new Float32Array(length);
+        const b = new Float32Array(length);
+        let index = 0;
+        for (let i = 0; i < pairs.length; i++) {
+            a.set(pairs[i][0], index);
+            b.set(pairs[i][1], index);
+            index += pairs[i][0].length;
+        }
+        return [a, b];
+    }
+    return {timelabel: voiceChunk.time, wav: audioBufferToWav(44100, zip(voiceChunk.data))};
+})(voiceChunk);
+
+
+console.log("wav", wav);
+
+/*
+  const saveWav = ((wav) => {
+  let div = document.createElement("a");
+  const blob = new Blob([wav.wav], {type: "audio/wav"});
+  let fileURL = URL.createObjectURL(blob);
+  div.setAttribute("href", fileURL);
+  div.setAttribute("download", \`wav-\${Date.now()}.wav\`);
+  div.click();
+  })(wav);
+*/
+
+const transcribed = ((wav, whisper) => {
+    const audio_data = toBase64(new Uint8Array(wav.wav));
+    const audio_metadata = {mime_type: "audio/wav"};
+    const task = "transcribe";
+    console.log("running", audio_data.length);
+    return {segments: [{words: ["audio_data.length"]}]} // whisper.run({audio_data, audio_metadata, task});
+})(wav, whisper);
+
+console.log("transcribed", transcribed);
+
+const words = ((transcribed) => {
+    const result = [];
+    transcribed.segments.forEach((seg) => {
+        seg.words.forEach((word) => result.push(word));
+    });
+    return result;
+})(transcribed);
+
+const input = Events.change(words.join(" "));
+console.log("words", words);
+
+const model = Behaviors.collect([], words, ((old, now) => {
+  return [...old, {transcript: {fields: {segments: words}}, speakers: [], translations: [], assistants: []}];
+}));`],
+[`5`, `const css = \`
+html, body {
+height: 100%
+}
+\`;
+
+((css) => {
+    const style = document.createElement("style");
+    style.id = "pad-css";
+    style.textContent = css;
+    document.head.querySelector("#pad-css")?.remove();
+    document.head.appendChild(style);
+})(css);
+`],
+[`18`, `(() => {
+  const head = document.querySelector('head');
+  const script = document.createElement('script');
+  script.id = 'tailwindcss';
+  script.src = 'https://cdn.tailwindcss.com';
+  head.querySelector("#tailwindcss")?.remove();
+  head.appendChild(script);
+})(sessionStart);
+
+const Topbar = h('div', {"class":"flex flex-wrap px-6 py-4","id":"topbar"},
+  sessionStart ? h("h1", {"class":"py-1 text-xl font-bold"},
+    sessionStart.toLocaleString(),
+  ) : null,
+)
+
+const Entry = (entry) => {
+  if (!entry.transcript || !entry.transcript.fields || !entry.transcript.fields || !entry.transcript.fields.segments) return null;
+  const data = entry.transcript.fields;
+  const words = data.segments;
+  console.log(words);
+  return h('div', null,
+    h("div", {"class": "text text-teal-500 space-x-4"}, entry.speakers.length == 0 ? "unknown" : entry.speakers.map(s => {
+      return h("span", {"class": \`text-\${s.color}\`, "data-speaker-id": s.id}, s.name);
+    })),
+    h("div", {"class": \`text text-gray-400\`, lang: data.source_language},
+      words.map(w => {
+        const colors = ["red", "blue"];
+        return h('span', {
+          "class": colors.length == 0 ? "" : \`underline decoration-\${colors[0]}/50\`,
+        }, w)
+      })
+    ),
+    entry.translations.map(translation =>
+      h("div", {"class": "text text-cyan-500", lang: translation.lang},
+        translation.text,
+      )
+    ),
+    entry.assistants.map(asst => {
+      return h("div", {"class": "text text-fuchsia-500 whitespace-pre-wrap"},
+        h('b', null, asst.name), ' ', asst.text,
+      );
+    }),
+  );
+}
+
+// TODO add keyed entries
+const Session = (model) => { return h('div', null, model.map(Entry)) };
+
+const sessionStart = Behaviors.keep(Events.once(Date.now()));
+
+const App = h('div', {"class": "flex flex-row bg-gray-900 text-white antialiased"},
+  h('div', {'class': 'flex flex-col h-screen grow'},
+    Topbar,
+    h('div', {"class":"grow px-6 mt-4 overflow-auto"},
+      Session(model),
+    ),
+  ),
+)
+
+render(
+  App,
+  document.querySelector('body'),
+)`]]}
