@@ -1,19 +1,19 @@
 {"padTitle":"Bridge",
 "positions":{"map":{"__map":true,
-"values":[["1",{"height":1821.1267774012235,
+"values":[["1",{"height":2139.3662233947907,
 "id":"1",
 "type":"resize",
-"width":1207.5467308406487,
+"width":1175.598079581964,
 "x":-560.1166586818549,
 "y":-83.89870638139377}],["18",{"height":1407.714075025237,
 "id":"18",
 "type":"move",
 "width":942.8311006792607,
 "x":866.4612238771008,
-"y":-89.95857167233122}],["53",{"height":562.8427973530282,
+"y":-89.95857167233122}],["53",{"height":591.4492658201676,
 "id":"53",
-"type":"move",
-"width":688.8380302414324,
+"type":"resize",
+"width":695.8904958944581,
 "x":-1379.6658266933164,
 "y":-88.4020723640512}]]}},
 "titles":{"map":{"__map":true,
@@ -25,6 +25,11 @@
 "state":false,
 "title":"WAV"}]]}},
 "version":2,
+"windowEnabled":{"map":{"__map":true,
+"values":[["53",{"enabled":true,
+"id":"53"}],["1",{"enabled":true,
+"id":"1"}],["18",{"enabled":true,
+"id":"18"}]]}},
 "windowTypes":{"map":{"__map":true,
 "values":[["1","code"],["18","code"],["53","code"]]}},
 "windows":["1","18","53"],
@@ -37,6 +42,8 @@
     }
     return "/";
 })();
+
+const languages = ["eng", "en"];
 
 const {toBase64} = import("./media/toBase64.js");
 const {LocalMedia} = import("./media/localmedia.js");
@@ -115,20 +122,55 @@ const _speaking = Behaviors.collect({time: 0, data: [], speaking: false}, inputs
 const sendmsg = (msg, data) => {
   return msgSender(msg, data).then((obj) => obj.data.returns);
 }
-
 const transcribed = ((wav) => {
     const audio_data = toBase64(new Uint8Array(wav.wav));
     const audio_metadata = {mime_type: "audio/wav"};
     const task = "transcribe";
     const parameters = {audio_data, audio_metadata, task};
     const msg = msgindex['faster-whisper/transcribe-data'];
-    return sendmsg(msg, {parameters}) // whisper.run({audio_data, audio_metadata, task});
+    return sendmsg(msg, {parameters});
 })(wav);
 
+const sentenceId = Behaviors.collect(0, transcribed, (old, _new) => old + 1);
+
+const transcriptionWithId = {transcribed, sentenceId};
+
+console.log("transcriptionWithId", transcriptionWithId);
+
+const requestTranslation = ((transcriptionWithId) => {
+  if (!languages.includes(transcriptionWithId.transcribed.target_language)) {
+    return transcriptionWithId;
+  }
+  return;
+})(transcriptionWithId);
+ 
+const translatedP = ((transcriptionWithId) => {
+    const data = transcriptionWithId.transcribed;
+    const words = data.segments.flatMap((seg) => seg.words);
+    console.log(words);
+    const parameters = {
+      source_language: transcriptionWithId.transcribed.target_language,
+      target_language: languages[0],
+      text: words.map(w => w.word).join("")
+    };
+    const msg = msgindex['seamlessm4t/translate'];
+    return {translated: sendmsg(msg, {parameters}), sentenceId: transcriptionWithId.sentenceId};
+})(Events.change(requestTranslation), msgSender, msgindex);
+
+const translatedWithId = Events.resolvePart(translatedP);
+
+const translations = Behaviors.collect({map: new Map()}, translatedWithId, (old, translatedWithId) => {
+    console.log("translatedWithId", translatedWithId);
+  const text = translatedWithId.translated.segments.map((s => s.text)).join("");
+  old.map.set(translatedWithId.sentenceId, text);
+  return {map: old.map};
+});
+
+console.log(translations);
 
 const speakersFor = () => ["unknown"];
 
-const model = Behaviors.collect([], transcribed, ((old, t) => {
+const model = Behaviors.collect([], transcribed, (old, t) => {
   if (transcribed.segments.length === 0) {console.log("silent"); return old;}
   const now = {
     transcript: {fields: t},
@@ -136,10 +178,10 @@ const model = Behaviors.collect([], transcribed, ((old, t) => {
     assistants: [],
     tools: [],
     speakers: speakersFor(),
+    sentenceId
   };
   return [...old, now];
-}));
-`],
+})`],
 [`18`, `const {h, render, html} = import("./preact.standalone.module.js");
 
 (() => {
@@ -170,10 +212,12 @@ const Topbar = h('div', {"class":"flex flex-wrap px-6 py-4","id":"topbar"},
   ) : null,
 )
 
-const Entry = (entry) => {
+const Entry = (entry, translations) => {
   if (!entry.transcript || !entry.transcript.fields || !entry.transcript.fields || !entry.transcript.fields.segments) return null;
   const data = entry.transcript.fields;
   const track = [];
+  const translation = translations.map.get(entry.sentenceId);
+  console.log("entry translation", translation);
   const words = data.segments
     .flatMap((seg) => seg.words);
   return h('div', null,
@@ -188,11 +232,9 @@ const Entry = (entry) => {
         }, w.word)
       })
     ),
-    entry.translations.map(translation =>
-      h("div", {"class": "text text-cyan-500", lang: translation.lang},
-        translation.text,
-      )
-    ),
+   translation ? h("div", {"class": "text text-cyan-500", lang: translation.lang},
+        translation,
+      ) : null,    
     entry.assistants.map(asst => {
       return h("div", {"class": "text text-fuchsia-500 whitespace-pre-wrap"},
         h('b', null, asst.name), ' ', asst.text,
@@ -202,13 +244,13 @@ const Entry = (entry) => {
 }
 
 // TODO add keyed entries
-const Session = (model) => { return h('div', null, model.map(Entry)) };
+const Session = (model, translations) => { return h('div', null, model.map((e) => Entry(e, translations))) };
 
 const App = h('div', {"class": "flex flex-row bg-gray-900 text-white antialiased"},
   h('div', {'class': 'flex flex-col h-screen grow'},
     Topbar,
     h('div', {"class":"grow px-6 mt-4 overflow-auto"},
-      Session(model),
+      Session(model, translations),
     ),
   ),
 )
