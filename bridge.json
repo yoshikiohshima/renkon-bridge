@@ -1,19 +1,19 @@
 {"padTitle":"Bridge",
 "positions":{"map":{"__map":true,
-"values":[["1",{"height":2139.3662233947907,
+"values":[["1",{"height":2756.6520000107166,
 "id":"1",
 "type":"resize",
-"width":1175.598079581964,
+"width":827.0822339072696,
 "x":-560.1166586818549,
-"y":-83.89870638139377}],["18",{"height":1407.714075025237,
+"y":-83.89870638139377}],["18",{"height":1466.393849933964,
 "id":"18",
-"type":"move",
-"width":942.8311006792607,
-"x":866.4612238771008,
-"y":-89.95857167233122}],["53",{"height":591.4492658201676,
+"type":"resize",
+"width":935.4136523002136,
+"x":486.1991708574302,
+"y":-89.17549794316496}],["53",{"height":815.1473531194417,
 "id":"53",
 "type":"resize",
-"width":695.8904958944581,
+"width":717.1853855197904,
 "x":-1379.6658266933164,
 "y":-88.4020723640512}]]}},
 "titles":{"map":{"__map":true,
@@ -34,7 +34,7 @@
 "values":[["1","code"],["18","code"],["53","code"]]}},
 "windows":["1","18","53"],
 "zIndex":{"map":{"__map":true,
-"values":[["1",104],["18",103],["53",105]]}}}
+"values":[["1",104],["18",105],["53",103]]}}}
 {__codeMap: true, value: [[`1`, `const hostName = (() => {
     const maybeHost = new URL(window.top.location).searchParams.get("host");
     if (maybeHost) {
@@ -52,6 +52,9 @@ const {reflect, sender} = import(\`./msg.js\`);
 
 const msgindex = reflect(\`\${hostName}/substrate/v1/msgindex\`);
 const msgSender = sender();
+const sendmsg = (msg, data) => {
+  return msgSender(msg, data).then((obj) => obj.data.returns);
+}
 
 const audioContext = Behaviors.collect(undefined, trigger, (old, _now) => {
     if (old === undefined) {
@@ -119,9 +122,34 @@ const _speaking = Behaviors.collect({time: 0, data: [], speaking: false}, inputs
     return {time: currentTime, data: newInput, speaking: true};
 }));
 
-const sendmsg = (msg, data) => {
-  return msgSender(msg, data).then((obj) => obj.data.returns);
-}
+const listening = Behaviors.collect({time: 0, data: [], max: 0, over: false}, inputs, ((old, current) => {
+    const max = Math.max(...current.map((c) => c.max));
+    const currentTime = current[current.length - 1].currentTime;
+    const newInput = current.map((c) => c.input).filter((input) => input);
+    const newData = old.over ? [...newInput] : [...old.data, ...newInput];
+    const newTime = old.over ? currentTime : old.time;
+    const newMax = old.over ? max : Math.max(old.max, max);
+
+    if (currentTime >= old.time + 1 && !old.over) {
+        if (newMax < 0.01) {
+          return {time: currentTime, data: [], max: 0, over: true};
+        }
+        return {time: newTime, data: newData, max: newMax, over: true};
+    }
+    return {time: newTime, data: newData, max: newMax, over: false};
+}));
+
+const listeningChunk = listening.over ? listening : undefined;
+
+const fasterTranscribed = ((wav) => {
+    const audio_data = toBase64(new Uint8Array(wav.wav));
+    const audio_metadata = {mime_type: "audio/wav"};
+    const task = "transcribe";
+    const parameters = {audio_data, audio_metadata, task};
+    const msg = msgindex['faster-whisper/transcribe-data'];
+    return sendmsg(msg, {parameters});
+})(fasterWav);
+
 const transcribed = ((wav) => {
     const audio_data = toBase64(new Uint8Array(wav.wav));
     const audio_metadata = {mime_type: "audio/wav"};
@@ -155,25 +183,29 @@ const translatedP = ((transcriptionWithId) => {
     };
     const msg = msgindex['seamlessm4t/translate'];
     return {translated: sendmsg(msg, {parameters}), sentenceId: transcriptionWithId.sentenceId};
-})(Events.change(requestTranslation), msgSender, msgindex);
+})(requestTranslation, msgSender, msgindex);
 
 const translatedWithId = Events.resolvePart(translatedP);
 
-const translations = Behaviors.collect({map: new Map()}, translatedWithId, (old, translatedWithId) => {
-    console.log("translatedWithId", translatedWithId);
-  const text = translatedWithId.translated.segments.map((s => s.text)).join("");
-  old.map.set(translatedWithId.sentenceId, text);
-  return {map: old.map};
+const translations = Behaviors.collect(
+  {map: new Map()},
+  translatedWithId, (old, translatedWithId) => {
+      console.log("translatedWithId", translatedWithId);
+      const text = translatedWithId.translated.segments.map((s => s.text)).join("");
+      old.map.set(translatedWithId.sentenceId, text);
+      return {map: old.map};
 });
 
 console.log(translations);
 
 const speakersFor = () => ["unknown"];
 
-const model = Behaviors.collect([], transcribed, (old, t) => {
+const model = Behaviors.collect([], transcriptionWithId, (old, t) => {
+  const transcribed = transcriptionWithId.transcribed;
+  const sentenceId = transcriptionWithId.sentenceId;
   if (transcribed.segments.length === 0) {console.log("silent"); return old;}
   const now = {
-    transcript: {fields: t},
+    transcript: {fields: transcribed},
     translations: [],
     assistants: [],
     tools: [],
@@ -262,6 +294,17 @@ render(
 [`53`, `const {audioBufferToWav} = import("./media/wav.js");
 
 const wav = ((voiceChunk) => {
+    return {timelabel: voiceChunk.time, wav: chunkToWav(voiceChunk.data)};
+})(voiceChunk);
+
+const fasterWav = ((voiceChunk) => {
+    return {timelabel: voiceChunk.time, wav: chunkToWav(voiceChunk.data)};
+})(listeningChunk);
+
+console.log("wav", wav);
+console.log("fasterWav", fasterWav);
+
+const chunkToWav = (data) => {
     const zip = (pairs) => {
         const length = pairs[0][0].length * pairs.length;
         const a = new Float32Array(length);
@@ -273,10 +316,9 @@ const wav = ((voiceChunk) => {
             index += pairs[i][0].length;
         }
         return [a, b];
-    }
-    return {timelabel: voiceChunk.time, wav: audioBufferToWav(44100, zip(voiceChunk.data))};
-})(voiceChunk);
-
+    };
+    return audioBufferToWav(44100, zip(voiceChunk.data));
+}
 
 /*
   const saveWav = ((wav) => {
