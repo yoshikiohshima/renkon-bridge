@@ -332,11 +332,13 @@ export function pad() {
     top: 0px;
     right: 0px;
     width: 30%;
+    height: 80%;
     display: flex;
     box-shadow: 10px 10px 5px #4d4d4d, -10px -10px 5px #dddddd;
     transition: left 0.5s;
     background-color: white;
     z-index: 1000000;
+    overflow-y: scroll;
 }
 
 .dock #inspector {
@@ -373,7 +375,10 @@ export function pad() {
 
                         dock.appendChild(dom);
                         document.body.appendChild(dock);
-                        newInspector(Object.fromEntries([...thisProgramState.resolved]), dom);
+                        const result = thisProgramState.order.map((id) => {
+                            return [id, thisProgramState.resolved.get(id)]
+                        });
+                        newInspector(Object.fromEntries(result), dom);
                    }
                 }
             };
