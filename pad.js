@@ -254,7 +254,7 @@ export function pad() {
         const mirror = window.CodeMirror;
 
         const config = {
-	    // eslint configuration
+            // eslint configuration
             languageOptions: {
                 globals: mirror.globals,
                 parserOptions: {
@@ -263,8 +263,45 @@ export function pad() {
                 },
             },
             rules: {
-	    },
+            },
         };
+
+        const getDecl = (state, pos) => {
+            const decls = Renkon.findDecls(state.doc.toString());
+            const showDependency = Renkon.resolved.get("showGraph")?.value;
+            if (!showDependency || showDependency !== "showDeps") {return;}
+            const head = pos !== undefined ? pos : state.selection.ranges[0]?.head;
+            if (typeof head !== "number") {return;}
+            const decl = decls.find((d) => d.start <= head && head < d.end);
+            if (!decl) {return;}
+            const programState = new Renkon.constructor(0);
+            programState.setLog(() => {});
+            programState.setupProgram([decl.code]);
+            const keys = [...programState.nodes.keys()];
+            const last = keys[keys.length - 1];
+            const deps = [];
+            for (const k of keys) {
+                const is = programState.nodes.get(k).inputs;
+                deps.push(...is.filter((n) => !/_[0-9]/.exec(n)));
+            }
+            return {deps, name: last}
+        }
+
+        const wordHover = mirror.hoverTooltip((view, pos, _side) => {
+            let node = getDecl(view.state, pos);
+            if (!node) return null;
+            const {deps, name} = node;
+            return {
+                pos,
+                above: true,
+                create() {
+                    let dom = document.createElement("div");
+                    dom.textContent = `${deps} -> ${name}`;
+                    dom.className = "cm-tooltip-dependency cm-tooltip-cursor-wide";
+                    return {dom};
+                }
+            };
+        });
 
         const editor = new mirror.EditorView({
             doc: doc || `console.log("hello")`,
@@ -274,7 +311,8 @@ export function pad() {
                 mirror.EditorView.lineWrapping,
                 mirror.EditorView.editorAttributes.of({"class": "editor"}),
                 mirror.keymap.of([mirror.indentWithTab]),
-                mirror.linter(mirror.esLint(new mirror.eslint.Linter(), config))
+                mirror.linter(mirror.esLint(new mirror.eslint.Linter(), config)),
+                wordHover,
             ],
         });
         editor.dom.id = `${id}-editor`;
@@ -288,10 +326,32 @@ export function pad() {
 <html>
     <head>
         <meta charset="utf-8">
+        <style>
+.dock {
+    position: fixed;
+    top: 0px;
+    right: 0px;
+    width: 30%;
+    display: flex;
+    box-shadow: 10px 10px 5px #4d4d4d, -10px -10px 5px #dddddd;
+    transition: left 0.5s;
+    background-color: white;
+    z-index: 1000000;
+}
+
+.dock #inspector {
+    flex-grow: 1;
+    margin: 0px 20px 0px 20px;
+    background-color: #ffffff;
+    border: 1px solid black;
+}
+
+</style>
         <script type="module">
-            import {ProgramState, CodeMirror} from "./renkon-web.js";
+            import {ProgramState, CodeMirror, newInspector} from "./renkon-web.js";
             window.thisProgramState = new ProgramState(0);
             window.CodeMirror = CodeMirror;
+            window.newInspector = newInspector;
 
             window.onmessage = (evt) => {
                 if (evt.data && Array.isArray(evt.data.code)) {
@@ -299,6 +359,22 @@ export function pad() {
                     if (window.thisProgramState.evaluatorRunning === 0) {
                         window.thisProgramState.evaluator();
                     }
+                }
+                if (evt.data && typeof evt.data.inspector === "boolean") {
+                    if (window.thisProgramState) {
+                        if (document.body.querySelector(".dock")) {
+                            document.body.querySelector(".dock").remove();
+                            return;
+                        }
+                        const dock = document.createElement("div");
+                        dock.classList.add("dock");
+                        const dom = document.createElement("div");
+                        dom.id = "renkonInspector";
+
+                        dock.appendChild(dom);
+                        document.body.appendChild(dock);
+                        newInspector(Object.fromEntries([...thisProgramState.resolved]), dom);
+                   }
                 }
             };
         </script>
@@ -336,7 +412,7 @@ export function pad() {
         };
 
         renkon.querySelector("#padTitle").addEventListener("input", change);
-        return () => {renkon.querySelector("#padtitle").removeEventListener("change", change);}
+        return () => {renkon.querySelector("#padTitle").removeEventListener("change", change);}
     });
 
     const _padTitleUpdater = ((padTitle) => {
@@ -492,12 +568,23 @@ export function pad() {
     })(navigationAction, positions, padView);
 
     const showGraph = Behaviors.collect(
-        true,
+        "showGraph",
         Events.listener(renkon.querySelector("#showGraph"), "click", (evt) => evt),
-        (now, _click) => !now
+        (now, _click) => {
+            if (now === "showGraph") {return "showDeps";}
+            if (now === "showDeps") {return "hide";}
+            if (now === "hide") {return "showGraph"}
+            return now;
+        }
     );
 
-    document.querySelector("#showGraph").textContent = showGraph ? "show graph" : "hide graph";
+    ((showGraph) => {
+        let str;
+        if (showGraph === "showGraph") {str = "show graph";}
+        if (showGraph === "showDeps") {str = "show deps";}
+        if (showGraph === "hide") {str = "hide graph"}
+        document.querySelector("#showGraph").textContent = str;
+    })(showGraph);
 
     const _onRun = ((runRequest, windowContents, windowEnabled) => {
         const id = runRequest.id;
@@ -508,10 +595,36 @@ export function pad() {
         iframe.dom.contentWindow.postMessage({code: code, path: id});
     })(runRequest, windowContents, windowEnabled);
 
+    const _onInspect = ((inspectRequest) => {
+        const id = inspectRequest.id;
+        const iframe = windowContents.map.get(id);
+        iframe.dom.contentWindow.postMessage({inspector: true, path: id});
+    })(inspectRequest);
+
     const remove = Events.receiver();
     const titleEditChange = Events.receiver();
     const enabledChange = Events.receiver();
     const runRequest = Events.receiver();
+    const inspectRequest = Events.receiver();
+
+    const dblClick = Events.listener(renkon.querySelector("#pad"), "dblclick", (evt) => evt);
+
+    const _goTo = ((padView, positions, dblClick) => {
+        const strId = dblClick.target.id;
+        if (!strId.endsWith("-titleBar")) {return;}
+        const id = Number.parseInt(strId);
+        const position = positions.map.get(`${id}`);
+
+        const pad = document.body.querySelector("#pad").getBoundingClientRect();
+
+        const scaleX = pad.width / position.width;
+        const scaleY = pad.height / position.height;
+        const scale = Math.min(scaleX, scaleY) * 0.95;
+        const x = pad.width / 2 - (position.x + position.width / 2) * scale;
+        const y = pad.height / 2 - (position.y + position.height / 2) * scale;
+
+        Events.send(padViewChange, {x, y, scale});
+    })(padView, positions, dblClick);
 
     const rawPadDown = Events.listener(renkon.querySelector("#pad"), "pointerdown", (evt) => {
         const strId = evt.target.id;
@@ -751,6 +864,15 @@ export function pad() {
                     },
                 }),
                 h("div", {
+                    id: `${id}-inspectorButton`,
+                    "class": "titlebarButton inspectorButton",
+                    type,
+                    onClick: (evt) => {
+                        //console.log(evt);
+                        Events.send(inspectRequest, {id: `${Number.parseInt(evt.target.id)}`});
+                    },
+                }),
+                h("div", {
                     id: `${id}-title`,
                     "class": "title",
                     contentEditable: `${title.state}`,
@@ -885,14 +1007,14 @@ export function pad() {
 
     // Graph Visualization
 
-    const analyzed = ((windowContents, trigger, showGraph) => {
+    const analyzed = ((windowContents, windowEnabled, trigger, showGraph) => {
         if (!showGraph) {return new Map()}
         if (trigger === null) {return new Map()}
         if (typeof trigger === "object" && trigger.id) {return new Map();}
         const programState = new Renkon.constructor(0);
         programState.setLog(() => {});
 
-        const code = [...windowContents.map].filter(([_id, editor]) => editor.state).map(([id, editor]) => ({blockId: id, code: editor.state.doc.toString()}));
+        const code = [...windowContents.map].filter(([id, editor]) => editor.state && windowEnabled.map.get(id)?.enabled).map(([id, editor]) => ({blockId: id, code: editor.state.doc.toString()}));
         try {
             programState.setupProgram(code);
         } catch(e) {
@@ -963,7 +1085,7 @@ export function pad() {
         }
 
         return edges;
-    })(windowContents, Events.or(remove, hovered), showGraph);
+    })(windowContents, windowEnabled, Events.or(remove, hovered), showGraph === "showGraph");
 
     const line = (p1, p2, color, label) => {
         let pl;
@@ -1019,7 +1141,7 @@ export function pad() {
         });
 
         return html`<svg viewBox="0 0 ${window.innerWidth} ${window.innerHeight}" xmlns="http://www.w3.org/2000/svg">${outEdges}${inEdges}</svg>`;
-    })(positions, padView, analyzed, hoveredB, showGraph);
+    })(positions, padView, analyzed, hoveredB, showGraph === "showGraph");
 
     const _graphRender = render(graph, document.querySelector("#overlay"));
 
@@ -1068,7 +1190,7 @@ html, body {
 }
 
 .editor {
-    height: calc(100% - 24px);
+    height: 100%;
     border-radius: 0px 0px 6px 6px;
 }
 
@@ -1122,11 +1244,11 @@ html, body {
     cursor: pointer;
     border: 2px solid #555;
 }
-		   
+                   
 
 .runnerIframe {
     width: 100%;
-    height: calc(100% - 24px);
+    height: 100%;
     border: 2px solid black;
     box-sizing: border-box;
     border-radius: 0px 0px 6px 6px;
@@ -1212,7 +1334,7 @@ html, body {
 }
 
 .windowHolder {
-    height:100%;
+    height: calc(100% - 24px);
 }
 
 .windowHolder[blurred="true"] {
@@ -1287,10 +1409,32 @@ html, body {
     background-image: url("data:image/svg+xml,%3Csvg%20width%3D%2224px%22%20height%3D%2224px%22%20viewBox%3D%220%200%2024%2024%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Crect%20x%3D%223%22%20y%3D%223%22%20width%3D%2218%22%20height%3D%2218%22%20rx%3D%222%22%20ry%3D%222%22%20fill%3D%22none%22%20stroke%3D%22%234D4D4D%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E");
 }
 
+.inspectorButton {
+    background-image: url("data:image/svg+xml,%3Csvg%20width%3D%2224px%22%20height%3D%2224px%22%20viewBox%3D%220%200%2024%2024%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%234D4D4D%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3C!--%20Line%201%20--%3E%3Ccircle%20cx%3D%225%22%20cy%3D%227%22%20r%3D%221.5%22%20fill%3D%22%234D4D4D%22%20stroke%3D%22none%22%2F%3E%3Cline%20x1%3D%228%22%20y1%3D%227%22%20x2%3D%2219%22%20y2%3D%227%22%2F%3E%3C!--%20Line%202%20--%3E%3Ccircle%20cx%3D%225%22%20cy%3D%2212%22%20r%3D%221.5%22%20fill%3D%22%234D4D4D%22%20stroke%3D%22none%22%2F%3E%3Cline%20x1%3D%228%22%20y1%3D%2212%22%20x2%3D%2219%22%20y2%3D%2212%22%2F%3E%3C!--%20Line%203%20--%3E%3Ccircle%20cx%3D%225%22%20cy%3D%2217%22%20r%3D%221.5%22%20fill%3D%22%234D4D4D%22%20stroke%3D%22none%22%2F%3E%3Cline%20x1%3D%228%22%20y1%3D%2217%22%20x2%3D%2219%22%20y2%3D%2217%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    display: none;
+    pointer-events: none;
+}
+
+.inspectorButton[type="runner"] {
+    display: inherit;
+    pointer-events: all;
+}
+
 .cm-tooltip-lint {
    font-size: 12px;
 }
 
+.cm-tooltip-dependency {
+    background-color: #66b;
+    color: white;
+    border: none;
+    padding: 2px 7px;
+    border-radius: 4px;
+}
+
+.cm-tooltip-cursor-wide {
+   text-wrap: nowrap;
+}
 `;
 
     ((css) => {
