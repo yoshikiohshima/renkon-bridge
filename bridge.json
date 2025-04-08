@@ -15,25 +15,25 @@
 "type":"move",
 "width":734.716050301518,
 "x":-956.9950298533001,
-"y":-1083.3127022167046}],["66",{"height":1324.3370259903083,
+"y":-1083.3127022167046}],["66",{"height":1838.3155551808925,
 "id":"66",
-"type":"move",
-"width":759.7127836659954,
+"type":"resize",
+"width":771.5090421052652,
 "x":-973.3278907175718,
-"y":-246.50633627324996}],["67",{"height":211.61227384670727,
+"y":-246.50633627324996}],["67",{"height":135.4495628975182,
 "id":"67",
 "type":"resize",
-"width":652.0663330430016,
+"width":652.8703720337604,
 "x":-2662.4753056217505,
-"y":-1106.188742534867}],["68",{"height":481.75480574631274,
+"y":-1106.188742534867}],["68",{"height":447.10119544284794,
 "id":"68",
-"type":"move",
+"type":"resize",
 "width":648.3398524006627,
 "x":-2650.775654588937,
-"y":-860.3714356197971}],["69",{"height":208.59241195043052,
+"y":-860.3714356197971}],["69",{"height":203.73526412906293,
 "id":"69",
-"type":"move",
-"width":635.3891770244189,
+"type":"resize",
+"width":633.1839472778348,
 "x":-2654.534647083145,
 "y":-338.3727247725912}]]}},
 "titles":{"map":{"__map":true,
@@ -211,20 +211,24 @@ const sessionStart = Behaviors.keep(Events.once(Date.now()));
 
 const speakersFor = () => ["unknown"];
 
-const model = Behaviors.collect([], transcriptionWithId, (old, t) => {
-  const transcribed = t.transcribed.data;
-  const time = t.transcribed.time;
-  const sentenceId = t.id;
-  if (transcribed.segments.length === 0) {console.log("silent"); return old;}
-  const now = {
-    transcript: {fields: transcribed},
-    translations: [],
-    assistants: [],
-    tools: [],
-    speakers: speakersFor(),
-    sentenceId
+const model = Behaviors.collect([], transcriptionEvents, (old, ts) => {
+  const now = [];
+  for (let t of ts) {
+    const transcribed = t?.transcribed?.data;
+    if (!transcribed) {continue;}
+    const time = t.transcribed.time;
+    const sentenceId = t.id;
+    if (transcribed.segments.length === 0) {console.log("silent"); continue;}
+    now.push({
+      transcript: {fields: transcribed},
+      translations: [],
+      assistants: [],
+      tools: [],
+      speakers: speakersFor(),
+      sentenceId
+    });
   };
-  return [...old, now];
+  return [...old, ...now];
 });
 
 const Topbar = h('div', {"class":"flex flex-wrap px-6 py-4","id":"topbar"},
@@ -383,6 +387,8 @@ const transcriptionEvents = Events.listener(transcriptionSource, "message", (evt
   const data = JSON.parse(evt.data);
   return data.events.map(record => record.data_sha256 ? {...record, data_url: readRecordDataURL(record.id)} : record.fields);
 });
+
+console.log("transcriptionEvents", transcriptionEvents)
 
 const transcriptionSource = Behaviors.collect(null, Events.change(transcrptionQueryUrl), (old, queryUrl) => {
     old?.close();
