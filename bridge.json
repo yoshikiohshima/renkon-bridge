@@ -1,9 +1,9 @@
 {"padTitle":"Bridge",
 "positions":{"map":{"__map":true,
-"values":[["1",{"height":2045.2168571270815,
+"values":[["1",{"height":2216.747843633428,
 "id":"1",
 "type":"resize",
-"width":845.5940748732971,
+"width":896.1165077382022,
 "x":-1950.0952492796307,
 "y":-1075.113683311747}],["18",{"height":1867.8569345417866,
 "id":"18",
@@ -17,10 +17,25 @@
 "x":-956.9950298533001,
 "y":-1083.3127022167046}],["66",{"height":1324.3370259903083,
 "id":"66",
-"type":"resize",
+"type":"move",
 "width":759.7127836659954,
-"x":-956.869209018501,
-"y":-181.29392986185817}]]}},
+"x":-973.3278907175718,
+"y":-246.50633627324996}],["67",{"height":211.61227384670727,
+"id":"67",
+"type":"resize",
+"width":652.0663330430016,
+"x":-2662.4753056217505,
+"y":-1106.188742534867}],["68",{"height":481.75480574631274,
+"id":"68",
+"type":"move",
+"width":648.3398524006627,
+"x":-2650.775654588937,
+"y":-860.3714356197971}],["69",{"height":208.59241195043052,
+"id":"69",
+"type":"move",
+"width":635.3891770244189,
+"x":-2654.534647083145,
+"y":-338.3727247725912}]]}},
 "titles":{"map":{"__map":true,
 "values":[["1",{"id":"1",
 "state":false,
@@ -30,19 +45,28 @@
 "state":false,
 "title":"WAV"}],["66",{"id":"66",
 "state":false,
-"title":"Transcription and Translation"}]]}},
+"title":"Transcription and Translation"}],["67",{"id":"67",
+"state":false,
+"title":"Parameters"}],["68",{"id":"68",
+"state":false,
+"title":"Receive"}],["69",{"id":"69",
+"state":false,
+"title":"Send"}]]}},
 "version":2,
 "windowEnabled":{"map":{"__map":true,
 "values":[["53",{"enabled":true,
 "id":"53"}],["1",{"enabled":true,
 "id":"1"}],["18",{"enabled":true,
 "id":"18"}],["66",{"enabled":true,
-"id":"66"}]]}},
+"id":"66"}],["67",{"enabled":true,
+"id":"67"}],["68",{"enabled":true,
+"id":"68"}],["69",{"enabled":true,
+"id":"69"}]]}},
 "windowTypes":{"map":{"__map":true,
-"values":[["1","code"],["18","code"],["53","code"],["66","code"]]}},
-"windows":["1","18","53","66"],
+"values":[["1","code"],["18","code"],["53","code"],["66","code"],["67","code"],["68","code"],["69","code"]]}},
+"windows":["1","18","53","66","67","68","69"],
 "zIndex":{"map":{"__map":true,
-"values":[["1",104],["18",107],["53",106],["66",105]]}}}
+"values":[["1",104],["18",107],["53",106],["66",110],["67",108],["68",109],["69",105]]}}}
 {__codeMap: true, value: [[`1`, `const hostName = (() => {
     const maybeHost = new URL(window.top.location).searchParams.get("host");
     if (maybeHost) {
@@ -106,7 +130,7 @@ const voiceChunk = Events.receiver();
 
 console.log("voiceChunk", voiceChunk);
 
-const _speaking = Behaviors.collect({time: 0, data: [], speaking: false}, _inputs, ((old, current) => {
+const _speaking = Behaviors.collect({time: 0, data: [], speaking: false}, inputs, ((old, current) => {
     const max = Math.max(...current.map((c) => c.max));
     const currentTime = current[current.length - 1].currentTime;
     const newInput = current.map((c) => c.input);
@@ -115,7 +139,7 @@ const _speaking = Behaviors.collect({time: 0, data: [], speaking: false}, _input
         const newData = [...old.data, ...newInput];
         if (max < 0.01) {
             if (currentTime > old.time + 0.5) {
-                // Events.send(voiceChunk, {time: currentTime, data: newData});
+                Events.send(voiceChunk, {time: currentTime, data: newData});
                 return {time: currentTime, data: newData, speaking: false};
             }
             return {time: old.time, data: newData, speaking: old.speaking};
@@ -132,7 +156,7 @@ const _speaking = Behaviors.collect({time: 0, data: [], speaking: false}, _input
 
 const fasterVoiceChunk = Events.receiver();
 
-const listening = Behaviors.collect({time: 0, data: [], max: 0, over: false}, inputs, ((old, current) => {
+const listening = Behaviors.collect({time: 0, data: [], max: 0, over: false}, _inputs, ((old, current) => {
     const max = Math.max(...current.map((c) => c.max));
     const currentTime = current[current.length - 1].currentTime;
     const newInput = current.map((c) => c.input).filter((input) => input);
@@ -187,7 +211,7 @@ const sessionStart = Behaviors.keep(Events.once(Date.now()));
 
 const speakersFor = () => ["unknown"];
 
-const model = Behaviors.collect([], fasterTranscriptionWithId, (old, t) => {
+const model = Behaviors.collect([], transcriptionWithId, (old, t) => {
   const transcribed = t.transcribed.data;
   const time = t.transcribed.time;
   const sentenceId = t.id;
@@ -315,14 +339,26 @@ const translator = (request) => {
       text: words.map(w => w.word).join("")
     };
     const msg = msgindex['seamlessm4t/translate'];
-  console.log("translator", request.transcribed.time);
+    console.log("translator", request.transcribed.time);
     return {translated: sendmsg(msg, {parameters}), id: transcriptionWithId.id};
 };
 
+const translationRequests = (transcriptionWithId) => {
+  console.log("request", transcriptionWithId);
+  if (!Array.isArray(transcriptionWithId)) {return;}
+  const t = transcriptionWithId[0];
+  if (!t.transcribed) {return;}
+  if (!languages.includes(t.transcribed.data.target_language)) {
+    return t;
+  }
+  return;
+}
+
 const translationRequest = (transcriptionWithId) => {
-  if (!languages.includes(transcriptionWithId.transcribed.data.target_language)) {
-      console.log(transcriptionWithId);
-    return transcriptionWithId;
+  const t = transcriptionWithId;
+  if (!t.transcribed) {return;}
+  if (!languages.includes(t.transcribed.data.target_language)) {
+    return t;
   }
   return;
 }
@@ -339,7 +375,21 @@ const fasterTranscriptionId = Behaviors.collect(0, fasterTranscribed, (old, _new
 const fasterTranscriptionWithId = {transcribed: fasterTranscribed, id: fasterTranscriptionId};
 console.log("fasterTranscribed", fasterTranscribed);
 
-const requestTranslation = translationRequest(transcriptionWithId);
+writeRecord([{fields: transcriptionWithId}]);
+
+const transcriptionEvents = Events.listener(transcriptionSource, "message", (evt) => {
+  console.log("eventsource", evt);
+  const readRecordDataURL = id => \`\${baseURL}/events/\${id}/data\`;
+  const data = JSON.parse(evt.data);
+  return data.events.map(record => record.data_sha256 ? {...record, data_url: readRecordDataURL(record.id)} : record.fields);
+});
+
+const transcriptionSource = Behaviors.collect(null, Events.change(transcrptionQueryUrl), (old, queryUrl) => {
+    old?.close();
+    return new window.EventSource(queryUrl);
+});
+
+const requestTranslation = translationRequests(transcriptionEvents);
 const translatedP = translator(requestTranslation);
 const translatedWithId = Events.resolvePart(translatedP);
 console.log("translatedWithId", translatedWithId);
@@ -366,4 +416,40 @@ const fasterTranslations = Behaviors.collect(
       old.map.set(translatedWithId.id, text);
       return {map: old.map};
 });
+`],
+[`67`, `const baseURL = \`\${hostName}/events;data=substrate-bootstrap-dev\`;
+const streamURL = \`\${baseURL}/stream/events\`;
+const writeRecordsURL = \`\${baseURL}/\`
+const recordQuery = {compare: {type: [{compare: "=", value: "example"}]}};
+`],
+[`68`, `const transcrptionQueryUrl = ((streamURL, recordQuery) => {
+  const url = new URL(streamURL);
+  url.searchParams.set("queryjson", JSON.stringify(recordQuery));
+  return url.toString();
+})(streamURL, recordQuery);
+
+/*
+const eventSource = Behaviors.collect(null, Events.change(queryUrl), (old, queryUrl) => {
+    old?.close();
+    return new window.EventSource(queryUrl);
+});
+*/
+/*
+const events = Events.listener(eventSource, "message", (evt) => {
+  const readRecordDataURL = id => \`\${baseURL}/events/\${id}/data\`;
+  const data = JSON.parse(evt.data);
+  return data.events.map(record => record.data_sha256 ? {...record, data_url: readRecordDataURL(record.id)} : record);
+});
+
+console.log(events);
+*/`],
+[`69`, `const writeRecord = (records) => {
+  console.log("write", records);
+  return fetch(writeRecordsURL, {method: 'POST', body: JSON.stringify({
+    command: "events:write",
+    parameters: {
+      "events": records,
+    },
+  })});
+}
 `]]}
