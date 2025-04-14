@@ -5,22 +5,22 @@
 "type":"resize",
 "width":896.1165077382022,
 "x":-1950.0952492796307,
-"y":-1075.113683311747}],["18",{"height":1867.8569345417866,
+"y":-1075.113683311747}],["18",{"height":1991.6065567461292,
 "id":"18",
-"type":"move",
-"width":984.3565734053251,
+"type":"resize",
+"width":1001.4174626774663,
 "x":-21.782531248348075,
-"y":-1084.5418612971857}],["53",{"height":767.9455806252175,
+"y":-1084.5418612971857}],["53",{"height":848.0730470116574,
 "id":"53",
-"type":"move",
-"width":734.716050301518,
+"type":"resize",
+"width":763.4315803475438,
 "x":-956.9950298533001,
-"y":-1083.3127022167046}],["66",{"height":1924.2112881034095,
+"y":-1083.3127022167046}],["66",{"height":1383.9796597416553,
 "id":"66",
 "type":"resize",
-"width":818.7901243433924,
+"width":787.814248798653,
 "x":-973.3278907175718,
-"y":-246.50633627324996}],["67",{"height":165.79235035858042,
+"y":-215.4422342082828}],["67",{"height":165.79235035858042,
 "id":"67",
 "type":"move",
 "width":649.6207298629481,
@@ -66,13 +66,10 @@
 "values":[["1","code"],["18","code"],["53","code"],["66","code"],["67","code"],["68","code"],["69","code"]]}},
 "windows":["1","18","53","66","67","68","69"],
 "zIndex":{"map":{"__map":true,
-"values":[["1",104],["18",107],["53",106],["66",109],["67",105],["68",108],["69",110]]}}}
+"values":[["1",104],["18",107],["53",106],["66",110],["67",105],["68",108],["69",109]]}}}
 {__codeMap: true, value: [[`1`, `const hostName = (() => {
     const maybeHost = new URL(window.top.location).searchParams.get("host");
-    if (maybeHost) {
-        return maybeHost;
-    }
-    return "/";
+    return maybeHost || "/"
 })();
 
 const languages = ["eng", "en"];
@@ -156,7 +153,6 @@ const _speaking = Behaviors.collect({time: 0, data: [], speaking: false}, inputs
 
 /*
 const fasterVoiceChunk = Events.receiver();
-
 
 const listening = Behaviors.collect({time: 0, data: [], max: 0, over: false}, _inputs, ((old, current) => {
     const max = Math.max(...current.map((c) => c.max));
@@ -244,11 +240,9 @@ const Entry = (entry, translations) => {
   if (!entry.transcript || !entry.transcript.fields || !entry.transcript.fields || !entry.transcript.fields.segments) return null;
   const data = entry.transcript.fields;
   const track = [];
-  // console.log("sentenceId", entry.sentenceId);
   const translation = translations.map.get(entry.eventId);
   console.log(translations.map);
-  const words = data.segments
-    .flatMap((seg) => seg.words);
+  const words = data.segments.flatMap((seg) => seg.words);
   return h('div', null,
     h("div", {"class": "text text-teal-500 space-x-4"}, entry.speakers.length == 0 ? "unknown" : entry.speakers.map(s => {
       return h("span", {"class": \`text-\${s.color}\`, "data-speaker-id": s.id}, s.name);
@@ -352,7 +346,7 @@ const translator = (request) => {
       text: words.map(w => w.word).join("")
     };
     const msg = msgindex['seamlessm4t/translate'];
-    return {translated: sendmsg(msg, {parameters}), sentenceId: request.fields.sentenceId, eventId: request.id};
+    return {translated: sendmsg(msg, {parameters}), eventId: request.id};
 };
 
 const translationRequests = (transcriptionWithId) => {
@@ -369,7 +363,7 @@ const translationRequests = (transcriptionWithId) => {
 const transcribedP = transcriber(wav);
 const transcribed = Events.resolvePart(transcribedP);
 const transcriptionId = Behaviors.collect(0, transcribed, (old, _new) => old + 1);
-const transcriptionWithId = {transcribed, sentenceId: transcriptionId, type: "transcription"};
+const transcriptionWithId = {transcribed, type: "transcription"};
 console.log("transcriptionWithId", transcriptionWithId);
 
 writeRecord([{fields: transcriptionWithId}]);
@@ -385,7 +379,7 @@ console.log("transcriptionEvents", transcriptionEvents);
 const requestTranslation = translationRequests(transcriptionEvents);
 const translatedP = translator(requestTranslation);
 const translated = Events.resolvePart(translatedP);
-const translatedWithId = {...translated, sentenceId: translated.sentenceId, eventId: translated.eventId, type: "translation"};
+const translatedWithId = {...translated, eventId: translated.eventId, type: "translation"};
 
 writeRecord([{fields: translatedWithId}]);
 console.log("translatedWithId", translatedWithId);
@@ -401,11 +395,12 @@ console.log("translationEvents", translationEvents);
 const translations = Behaviors.collect(
   {map: new Map()},
   translationEvents, (old, translationEvents) => {
-      const record = translationEvents.records[0];
+    for (const record of translationEvents.records) {
       const text = record.fields.translated?.segments.map((s => s.text)).join("");
-      if (!text) {return old;}
+      if (!text) {continue;}
       old.map.set(record.fields.eventId, text);
-      return {map: old.map};
+    }
+    return {map: old.map};
 });
 `],
 [`67`, `const baseURL = \`\${hostName}/events;data=substrate-bootstrap-dev18\`;
