@@ -33,23 +33,6 @@ export function pad() {
 
     // Stringify
 
-    /*
-  Copyright 2020 Croquet Corporation.
-  Copyright 2025 Yoshiki Ohshima
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
     function stringifyInner(node, seen) {
         if (node === undefined) return undefined;
         if (typeof node === 'number') return Number.isFinite(node) ? `${node}` : 'null';
@@ -545,11 +528,7 @@ limitations under the License.
     const _padViewUpdate = ((padView) => {
         const mover = document.querySelector("#mover");
         const pad = document.querySelector("#pad");
-        mover.style.setProperty("left", `${padView.x}px`);
-        mover.style.setProperty("top", `${padView.y}px`);
-        mover.style.setProperty("transform", `scale(${padView.scale})`);
-        mover.style.setProperty("width", `${padView.width}px`);
-        mover.style.setProperty("height", `${padView.height}px`);
+        mover.style.setProperty("transform", ` translate(${padView.x}px, ${padView.y}px) scale(${padView.scale})`);
 
         pad.style.setProperty("background-position", `${padView.x}px ${padView.y}px`);
         pad.style.setProperty("background-size", `${64 * padView.scale}px ${64 * padView.scale}px`);
@@ -1050,7 +1029,7 @@ limitations under the License.
 
     const _loader = (() => {
         const input = document.createElement("div");
-        input.innerHTML = `<input id="imageinput" type="file" accept=".json .renkon">`;
+        input.innerHTML = `<input id="imageinput" type="file" accept=".json,.renkon">`;
         const imageInput = input.firstChild;
 
         imageInput.onchange = () => {
