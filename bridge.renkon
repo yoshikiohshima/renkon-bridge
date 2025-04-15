@@ -5,27 +5,27 @@
 "type":"resize",
 "width":896.1165077382022,
 "x":-1950.0952492796307,
-"y":-1075.113683311747}],["18",{"height":1991.6065567461292,
+"y":-1075.113683311747}],["18",{"height":2585.7045950205843,
 "id":"18",
 "type":"resize",
-"width":1001.4174626774663,
+"width":1073.2227602872229,
 "x":-21.782531248348075,
 "y":-1084.5418612971857}],["53",{"height":848.0730470116574,
 "id":"53",
 "type":"resize",
 "width":763.4315803475438,
 "x":-956.9950298533001,
-"y":-1083.3127022167046}],["66",{"height":1383.9796597416553,
+"y":-1083.3127022167046}],["66",{"height":1467.9449203194763,
 "id":"66",
 "type":"resize",
-"width":787.814248798653,
+"width":822.6972472091197,
 "x":-973.3278907175718,
-"y":-215.4422342082828}],["67",{"height":165.79235035858042,
+"y":-215.4422342082828}],["67",{"height":258.52343572567753,
 "id":"67",
-"type":"move",
-"width":649.6207298629481,
-"x":-2662.4753056217505,
-"y":-1093.6123714564872}],["68",{"height":447.10119544284794,
+"type":"resize",
+"width":677.8875220678262,
+"x":-2663.068289808288,
+"y":-1191.211020268903}],["68",{"height":447.10119544284794,
 "id":"68",
 "type":"move",
 "width":648.3398524006627,
@@ -66,7 +66,7 @@
 "values":[["1","code"],["18","code"],["53","code"],["66","code"],["67","code"],["68","code"],["69","code"]]}},
 "windows":["1","18","53","66","67","68","69"],
 "zIndex":{"map":{"__map":true,
-"values":[["1",104],["18",107],["53",106],["66",110],["67",105],["68",108],["69",109]]}}}
+"values":[["1",104],["18",107],["53",106],["66",105],["67",110],["68",108],["69",109]]}}}
 {__codeMap: true, value: [[`1`, `const hostName = (() => {
     const maybeHost = new URL(window.top.location).searchParams.get("host");
     return maybeHost || "/"
@@ -84,6 +84,8 @@ const msgSender = sender();
 const sendmsg = (msg, data) => {
   return msgSender(msg, data).then((obj) => obj.data.returns);
 }
+
+const spaceMsgindex = reflect(\`\${hostName}/\`);
 
 const audioContext = Behaviors.collect(undefined, trigger, (old, _now) => {
     if (old === undefined) {
@@ -199,18 +201,29 @@ const style = (() => {
 
   const css = \`
 html, body {
-height: 100%
+  height: 100%
+}
+.newSessionButton {
+  background-color: black;
+  color: white;
+  margin-left: 20px;
+  border-radius: 6px;
+  border: 2px solid white;
+  padding: 4px;
 }
 \`;
 
   return promise;
 })(sessionStart);
 
-const sessionStart = Behaviors.keep(Events.once(Date.now()));
+const sessionStart = Behaviors.keep(Events.once(new Date()));
 
 const speakersFor = () => ["unknown"];
 
-const model = Behaviors.collect([], transcriptionEvents, (old, ts) => {
+const model = Behaviors.select(
+  [],
+  Events.change(baseURL), (_old, _new) => [],
+  transcriptionEvents, (old, ts) => {
   const records = ts.records;
   const now = [];
   for (let t of records) {
@@ -230,9 +243,29 @@ const model = Behaviors.collect([], transcriptionEvents, (old, ts) => {
   return [...old, ...now];
 });
 
+const newSessionRequest = Events.receiver();
+
+console.log(newSessionRequest);
+
+const newSpace = (() => {
+  const spaceMsg = spaceMsgindex["spaces:new"];
+  return sendmsg(spaceMsg, {});
+})(newSessionRequest);
+
+const newSpaceURL = newSpace.space_id;
+
+console.log(newSpaceURL);
+
+
+
 const Topbar = h('div', {"class":"flex flex-wrap px-6 py-4","id":"topbar"},
   sessionStart ? h("h1", {"class":"py-1 text-xl font-bold"},
-    sessionStart.toLocaleString(),
+    [sessionStart.toLocaleString(), h("button", {
+      "class": "newSessionButton",
+      onclick: (evt) => {
+        evt.stopPropagation(); Events.send(newSessionRequest, true);
+      }
+    }, "new session")]
   ) : null,
 )
 
@@ -241,7 +274,6 @@ const Entry = (entry, translations) => {
   const data = entry.transcript.fields;
   const track = [];
   const translation = translations.map.get(entry.eventId);
-  console.log(translations.map);
   const words = data.segments.flatMap((seg) => seg.words);
   return h('div', null,
     h("div", {"class": "text text-teal-500 space-x-4"}, entry.speakers.length == 0 ? "unknown" : entry.speakers.map(s => {
@@ -392,8 +424,9 @@ const translationSource = Behaviors.collect(null, Events.change(translationQuery
 const translationEvents = Events.listener(translationSource, "message", recordHandler);
 console.log("translationEvents", translationEvents);
 
-const translations = Behaviors.collect(
+const translations = Behaviors.select(
   {map: new Map()},
+  Events.change(baseURL), (_old, _new) => {map: new Map()},
   translationEvents, (old, translationEvents) => {
     for (const record of translationEvents.records) {
       const text = record.fields.translated?.segments.map((s => s.text)).join("");
@@ -403,7 +436,12 @@ const translations = Behaviors.collect(
     return {map: old.map};
 });
 `],
-[`67`, `const baseURL = \`\${hostName}/events;data=substrate-bootstrap-dev18\`;
+[`67`, `const baseURL = Behaviors.collect(
+  \`\${hostName}/events;data=substrate-bootstrap-dev18\`,
+  Events.change(newSpaceURL), (_old, url) => {
+    return \`\${hostName}/events;data=\${url}\`;
+  }
+);
 const streamURL = \`\${baseURL}/stream/events\`;
 const writeRecordsURL = \`\${baseURL}/\`
 
