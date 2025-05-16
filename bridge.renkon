@@ -462,7 +462,7 @@ const recordHandler = (evt) => {
   let records = [];  
   const data = JSON.parse(evt.data);
   return {
-    records: data.events.map(record => record.data_sha256 ? {...record, data_url: readRecordDataURL(record.id)} : record),
+    records: data.updates.records.events.map(record => record.data_sha256 ? {...record, data_url: readRecordDataURL(record.id)} : record),
     incremental: data.incremental,
     until: data.until,
     max: data.max,
